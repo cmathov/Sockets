@@ -1,0 +1,39 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Compilar Servidor",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "servidor.c",
+                "-o",
+                "servidor",
+                "-lws2_32"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Compilación del servidor usando GCC"
+        },
+        {
+            "label": "Compilar Cliente",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "cliente.c",
+                "-o",
+                "cliente",
+                "-lws2_32"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "detail": "Compilación del cliente usando GCC"
+        }
+    ]
+}
