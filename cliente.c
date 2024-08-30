@@ -1,78 +1,75 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <winsock2.h>
 
-#define PUERTO 8080
-#define IP "127.0.0.1"
-
-boolean recibirMensajeYContestar(SOCKET clientSocket){
-    char buffer[1024];
-    char numero[10];
-    int recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-    if (recvSize == SOCKET_ERROR) {
-        printf("Fallo al recibir el mensaje\n");
-    } else {
-        buffer[recvSize] = '\0'; // Asegurarse de terminar la cadena
-        if(strcmp(buffer, "SALIR") != 0){ //Si el mensaje no es "SALIR"
-            printf("%s", buffer);
-
-            // Leer número ingresado por el usuario
-            fflush(stdin);
-            if (fgets(numero, sizeof(numero), stdin) == NULL) {
-                sprintf(numero, "0");
-            }
-            numero[strcspn(numero, "\n")] = '\0';
-
-            // Enviar respuesta al servidor
-            send(clientSocket, numero, strlen(numero), 0);
-
-            return TRUE;   
-        }
-        return FALSE;
-    }
-}
+#define SERVER_IP "127.0.0.1"
+#define PORT 8080
+#define BUFSIZE 1024
 
 int main() {
-    WSADATA wsaData;
-    SOCKET clientSocket;
-    struct sockaddr_in serverAddr;
-
+    WSADATA wsa;
+    SOCKET client_socket;
+    struct sockaddr_in server;
+    char buffer[BUFSIZE];
 
     // Inicializar Winsock
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        printf("Fallo al inicializar Winsock\n");
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        printf("Error en WSAStartup(): %d\n", WSAGetLastError());
         return 1;
     }
 
-    // Crear socket
-    clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (clientSocket == INVALID_SOCKET) {
-        printf("Fallo al crear el Socket\n");
+    // Crear el socket del cliente
+    if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+        printf("No se pudo crear el socket: %d\n", WSAGetLastError());
         WSACleanup();
         return 1;
     }
 
-    // Configurar dirección del servidor
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = inet_addr(IP);
-    serverAddr.sin_port = htons(PUERTO);
+    // Configurar la estructura sockaddr_in del servidor
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr(SERVER_IP);
+    server.sin_port = htons(PORT);
 
-    // Conectar al servidor
-    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        printf("Fallo al conectar con el servidor\n");
-        closesocket(clientSocket);
+    // Conectarse al servidor
+    if (connect(client_socket, (struct sockaddr *)&server, sizeof(server)) < 0) {
+        printf("Conexión fallida: %d\n", WSAGetLastError());
+        closesocket(client_socket);
         WSACleanup();
         return 1;
     }
 
-    // Recibir mensaje del servidor
-    boolean seguir = TRUE;
-    while (seguir){
-        seguir = recibirMensajeYContestar(clientSocket);
+    printf("Conectado al servidor.\n");
+
+    while (1) {
+        // Recibir mensaje del servidor
+        memset(buffer, 0, BUFSIZE);
+        if (recv(client_socket, buffer, BUFSIZE, 0) == SOCKET_ERROR) {
+            printf("Error al recibir el mensaje del servidor\n");
+            break;
+        }
+
+        // Mostrar mensaje del servidor
+        printf("%s", buffer);
+
+        // Leer input del usuario
+        fgets(buffer, BUFSIZE, stdin);
+        
+        // Si el input esta vacio cambiarlo a "vacio"
+        buffer[strcspn(buffer, "\n")] = 0;
+        if (buffer[0] == '\0') {
+            strcpy(buffer, "vacio");
+        }
+
+        // Enviar mensaje al servidor
+        if (send(client_socket, buffer, strlen(buffer), 0) < 0) {
+            printf("Error al enviar el mensaje al servidor\n");
+            break;
+        }
     }
 
-
-    // Cerrar socket
-    closesocket(clientSocket);
+    printf("Desconectandose del servidor.\n");
+    closesocket(client_socket);
     WSACleanup();
 
     return 0;

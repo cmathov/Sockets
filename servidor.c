@@ -3,7 +3,8 @@
 #include <time.h>
 #include <winsock2.h>
 
-#define PUERTO 8080
+#define PORT 8080
+#define BUFSIZE 1024
 
 void generarUsuario(int longitud, char *cadena){
    const char vocales[] = {"aeiou"};
@@ -23,7 +24,7 @@ void generarUsuario(int longitud, char *cadena){
             cadena[i] = consonantes[indice];
       }
    }
-   cadena[longitud] = '\0'; // Añadir el carácter nulo al final de la cadena
+   cadena[longitud] = '\0';
 }
 
 void generarContra(int longitud, char *cadena) {
@@ -36,151 +37,159 @@ void generarContra(int longitud, char *cadena) {
       int indice = rand() % numCaracteres;
       cadena[i] = caracteres[indice];
    }
-   cadena[longitud] = '\0'; // Añadir el carácter nulo al final de la cadena
+   cadena[longitud] = '\0';
+}
+
+void manejar_cliente(SOCKET client_socket) {
+   char buffer[BUFSIZE];
+   int opc;
+   char *menu = "\e[1;1H\e[2JBuenos dias, ¿Que desea generar?\n 1) Un nombre de usuario\n 2) Una contraseña\n 3) Salir\n\nOpcion: ";
+   char message[200];
+   while (1) {
+      send(client_socket, menu, strlen(menu), 0);
+
+      // Recibir la opción del cliente
+      memset(buffer, 0, BUFSIZE);
+      int bytes_received = recv(client_socket, buffer, BUFSIZE, 0);
+      if (bytes_received == SOCKET_ERROR) {
+         printf("Error al recibir el mensaje del cliente\n");
+         return;
+      }
+
+      // Convertir la opción a entero
+      opc = strtol(buffer, NULL, 10);
+
+      if(opc == 1){  // Generar nombre de usuario
+         sprintf(message, "\nElija la cantidad de caracteres para su nombre de usuario (Entre 5 y 15)\n\nCaracteres: ");
+         send(client_socket, message, strlen(message), 0);
+         
+         // Recibir cantidad de caracteres
+         bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+         if (bytes_received == SOCKET_ERROR) {
+            printf("Fallo al recibir el mensaje\n");
+            return;
+         }
+
+         // Convertir la cadena recibida a un entero
+         opc = strtol(buffer, NULL, 10);
+
+         // Mientras la cantidad de caracteres no sea correcta seguir pidiendo input
+         while((opc >= 5 && opc <= 15) == FALSE){
+            sprintf(message, "\nError cantidad de caracteres incorrecta, ingrese un numero mayor a 5 e igual o menor a 15\n\n");
+            send(client_socket, message, strlen(message), 0);
+            bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if (bytes_received == SOCKET_ERROR) {
+               printf("Fallo al recibir el mensaje\n");
+               return;
+            }
+            opc = strtol(buffer, NULL, 10);
+         }
+
+         // Generar usuario y enviarlo
+         char usuario[opc + 1];
+         generarUsuario(opc, usuario);
+         sprintf(message, "\nSu usuario es: %s", usuario);
+         send(client_socket, message, strlen(message), 0);
+
+         // Recibir confirmacion vacia
+         bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+         if (bytes_received == SOCKET_ERROR) {
+            printf("Fallo al recibir el mensaje\n");
+            return;
+         }
+      } else if(opc == 2){ // Opcion 2 generar contraseña
+         sprintf(message, "\nElija la cantidad de caracteres para su contraseña (Entre 8 y 49)\n\nCaracteres: ");
+         send(client_socket, message, strlen(message), 0);
+         
+         // Recibir cantidad de caracteres
+         bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+         if (bytes_received == SOCKET_ERROR) {
+            printf("Fallo al recibir el mensaje\n");
+            return;
+         } 
+
+         // Convertir la cadena recibida a un entero
+         opc = strtol(buffer, NULL, 10);
+
+         // Mientras la cantidad de caracteres no sea correcta seguir pidiendo input
+         while((opc >= 8 && opc < 50) == FALSE){
+            sprintf(message, "\nError cantidad de caracteres incorrecta, ingrese un numero mayor a 8 y menor a 50\n\n");
+            send(client_socket, message, strlen(message), 0);
+            bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+            if (bytes_received == SOCKET_ERROR) {
+               printf("Fallo al recibir el mensaje\n");
+               return;
+            }
+            opc = strtol(buffer, NULL, 10);
+         }
+         
+         // Generar copntraseña y enviarla
+         char contra[opc + 1];
+         generarContra(opc, contra);
+         sprintf(message, "\nSu contraseña es: %s", contra);
+         send(client_socket, message, strlen(message), 0);
+
+         // Recibir confirmacion vacia
+         bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+         if (bytes_received == SOCKET_ERROR) {
+            printf("Fallo al recibir el mensaje\n");
+            return;
+         }
+      }else if (opc == 3) {  // Salir
+         printf("Cliente desconectado.\n");
+         break;
+      }else{
+         //Opcion incorrecta
+      }
+   }
 }
 
 int main() {
-   WSADATA wsaData;
-   SOCKET serverSocket, clientSocket;
-   struct sockaddr_in serverAddr, clientAddr;
-   int clientAddrSize = sizeof(clientAddr);
-   char buffer[1024];
-   int recvSize;
-   int opc = 0;
-   char message[200];
+    WSADATA wsa;
+    SOCKET server_socket, client_socket;
+    struct sockaddr_in server, client;
+    int client_len = sizeof(client);
 
-   // Inicializar Winsock
-   if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-      printf("Fallo al inicializar Winsock\n");
-      return 1;
-   }
+    // Inicializar Winsock
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        printf("Error en WSAStartup(): %d\n", WSAGetLastError());
+        return 1;
+    }
 
-   // Crear socket
-   serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-   if (serverSocket == INVALID_SOCKET) {
-      printf("Fallo al crear el Socket\n");
-      WSACleanup();
-      return 1;
-   }
+    // Crear el socket del servidor
+    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+        printf("No se pudo crear el socket: %d\n", WSAGetLastError());
+        WSACleanup();
+        return 1;
+    }
 
-   // Configurar dirección del servidor
-   serverAddr.sin_family = AF_INET;
-   serverAddr.sin_addr.s_addr = INADDR_ANY;
-   serverAddr.sin_port = htons(PUERTO);
+    // Configurar la estructura sockaddr_in
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_port = htons(PORT);
 
-   // Enlazar el socket
-   if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-      printf("Fallo al enlazar\n");
-      closesocket(serverSocket);
-      WSACleanup();
-      return 1;
-   }
+    // Asociar el socket al puerto
+    if (bind(server_socket, (struct sockaddr *)&server, sizeof(server)) == SOCKET_ERROR) {
+        printf("Bind falló: %d\n", WSAGetLastError());
+        closesocket(server_socket);
+        WSACleanup();
+        return 1;
+    }
 
-   // Escuchar conexiones
-   if (listen(serverSocket, 3) == SOCKET_ERROR) {
-      printf("Fallo al escuchar la conexion\n");
-      closesocket(serverSocket);
-      WSACleanup();
-      return 1;
-   }
+    // Escuchar conexiones entrantes
+    listen(server_socket, 3);
+    printf("Esperando conexiones...\n");
 
-   printf("Esperando una conexion...\n");
+    // Aceptar y manejar conexiones entrantes
+    while ((client_socket = accept(server_socket, (struct sockaddr *)&client, &client_len)) != INVALID_SOCKET) {
+        printf("Cliente conectado.\n");
+        manejar_cliente(client_socket);
+        closesocket(client_socket);
+        printf("Esperando nuevo cliente...\n");
+    }
 
-   // Aceptar una conexión
-   clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddr, &clientAddrSize);
-   if (clientSocket == INVALID_SOCKET) {
-      printf("Fallo al aceptar la conexion\n");
-      closesocket(serverSocket);
-      WSACleanup();
-      return 1;
-   }
+    closesocket(server_socket);
+    WSACleanup();
 
-   printf("Conexion exitosa\n");
-
-   boolean seguir = TRUE;
-   while (seguir){
-      // Enviar menu
-      sprintf(message, "\e[1;1H\e[2JBuenos dias, ¿Que desea generar?\n 1) Un nombre de usuario\n 2) Una contraseña\n 3) Salir\n\nOpcion: ");
-      send(clientSocket, message, strlen(message), 0);
-
-      // Recibir opcion del menu
-      recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-      if (recvSize == SOCKET_ERROR) {
-         printf("Fallo al recibir el mensaje\n");
-      } else {
-         printf("Mensaje: %s\n", buffer);
-         // Convertir la cadena recibida a un entero
-         opc = atoi(buffer);
-
-         if(opc == 1){
-            //Opcion 1 generar nombre de usuario
-            sprintf(message, "\nElija la cantidad de caracteres para su nombre de usuario (Entre 5 y 15)\n\nCaracteres: ");
-            send(clientSocket, message, strlen(message), 0);
-            
-            // Recibir cantidad de caracteres
-            recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-            
-            if (recvSize == SOCKET_ERROR) {
-               printf("Fallo al recibir el mensaje\n");
-            } else {
-               // Convertir la cadena recibida a un entero
-               opc = atoi(buffer);
-               printf("Caracteres: %d\n", opc);
-               sprintf(message, "\nError cantidad de caracteres incorrecta\n\n");
-               if(opc >= 5 && opc <= 15){
-                  char usuario[opc + 1]; // +1 para el carácter nulo
-                  generarUsuario(opc, usuario);
-                  sprintf(message, "\nSu usuario es: %s", usuario);
-               }
-               send(clientSocket, message, strlen(message), 0);
-            }
-
-
-         }else if(opc == 2){
-            //Opcion 2 generar contraseña
-            sprintf(message, "\nElija la cantidad de caracteres para su contraseña (Entre 8 y 49)\n\nCaracteres: ");
-            send(clientSocket, message, strlen(message), 0);
-            
-            // Recibir cantidad de caracteres
-            recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-            
-            if (recvSize == SOCKET_ERROR) {
-               printf("Fallo al recibir el mensaje\n");
-            } else {
-               // Convertir la cadena recibida a un entero
-               opc = atoi(buffer);
-               printf("Caracteres: %d\n", opc);
-               sprintf(message, "\nError cantidad de caracteres incorrecta\n\n");
-               if(opc >= 8 && opc < 50){
-                  char contra[opc + 1]; // +1 para el carácter nulo
-                  generarContra(opc, contra);
-                  sprintf(message, "\nSu contraseña es: %s", contra);
-               }
-               send(clientSocket, message, strlen(message), 0);
-            }
-         }else if(opc == 3){
-            //SALIR
-            sprintf(message, "SALIR");
-            send(clientSocket, message, strlen(message), 0);
-            closesocket(clientSocket);
-            seguir = FALSE;
-         }else{
-            sprintf(message, "\nError numero de opcion incorrecto precione cualquier tecla para continuar\n\n");
-            send(clientSocket, message, strlen(message), 0);
-         }
-         fflush(stdin);
-         recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-         if (recvSize == SOCKET_ERROR) {
-            printf("Fallo al recibir el mensaje\n");
-         }
-      }
-   }
-
-   // Cerrar sockets
-   closesocket(clientSocket);
-   closesocket(serverSocket);
-   WSACleanup();
-
-   return 0;
+    return 0;
 }
-
